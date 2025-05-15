@@ -3,6 +3,7 @@ const cors = require('cors');
 const mysql = require('mysql2');
 const axios = require('axios');
 const os = require('os');
+const AWS = require('aws-sdk');
 require('dotenv').config();
 
 const app = express();
@@ -60,26 +61,21 @@ db.connect((err) => {
 // Routes
 app.get('/server-info', async (req, res) => {
   try {
-    // Get instance ID from EC2 metadata service
-    var meta  = new AWS.MetadataService();
     let instanceId = 'unknown';
     let availabilityZone = 'unknown';
 
     try {
       // EC2 metadata is available at a special IP address from within EC2
       instanceId = await axios.get('http://169.254.169.254/latest/meta-data/instance-id');
-
       availabilityZone = await axios.get('http://169.254.169.254/latest/meta-data/placement/availability-zone');
-      
-      
     } catch (error) {
       console.log('Not running on EC2 or metadata service not available');
     }
 
     // Return server info
     res.json({
-      instanceId: instanceId.data,
-      availabilityZone: availabilityZone.data,
+      instanceId: instanceId.data || 'unknown',
+      availabilityZone: availabilityZone.data || 'unknown',
       hostname: os.hostname(),
       timestamp: new Date().toISOString()
     });
@@ -189,16 +185,23 @@ app.delete('/api/users/:id', (req, res) => {
   });
 });
 
-// Start server
-const server = app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
-
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    console.log('HTTP server closed');
-    process.exit(0);
+// If this file is being required by another module (like bin/www)
+// then export the app. Otherwise, start the server directly.
+if (require.main === module) {
+  // Start server
+  const server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
   });
-});
+
+  // Handle graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+  });
+} else {
+  // Export the app for use in bin/www
+  module.exports = app;
+}
